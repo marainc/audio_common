@@ -23,6 +23,8 @@
 #include <memory>
 #include <portaudio.h>
 #include <rclcpp/rclcpp.hpp>
+#include <chrono>
+#include <thread>
 
 #include "audio_common/audio_capturer_node.hpp"
 #include "audio_common_msgs/msg/audio_stamped.hpp"
@@ -88,41 +90,73 @@ AudioCapturerNode::AudioCapturerNode() : Node("audio_capturer_node") {
 }
 
 AudioCapturerNode::~AudioCapturerNode() {
-  Pa_StopStream(this->stream_);
-  Pa_CloseStream(this->stream_);
+  if (this->stream_) {
+    Pa_StopStream(this->stream_);
+    Pa_CloseStream(this->stream_);
+  }
   Pa_Terminate();
 }
 
 void AudioCapturerNode::work() {
   while (rclcpp::ok()) {
+    
+    // Check if stream is still active
+    if (Pa_IsStreamActive(this->stream_) != 1) {
+      RCLCPP_WARN(this->get_logger(), "Audio stream is not active, stopping");
+      break;
+    }
+
+    // Check if data is available before attempting to read
+    signed long available = Pa_GetStreamReadAvailable(this->stream_);
+    if (available < 0) {
+      RCLCPP_ERROR(this->get_logger(), "Stream read availability error: %s", 
+                   Pa_GetErrorText(available));
+      break;
+    }
+
+    // If no data available, sleep briefly and continue
+    if (available < this->chunk_) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(1));
+      continue;
+    }
 
     auto msg = audio_common_msgs::msg::AudioStamped();
     msg.header.frame_id = this->frame_id_;
     msg.header.stamp = this->get_clock()->now();
 
+    bool read_success = false;
     switch (this->format_) {
     case paFloat32: {
       msg.audio.audio_data.float32_data = this->read_data<float>();
+      read_success = true;
       break;
     }
     case paInt32: {
       msg.audio.audio_data.int32_data = this->read_data<int32_t>();
+      read_success = true;
       break;
     }
     case paInt16: {
       msg.audio.audio_data.int16_data = this->read_data<int16_t>();
+      read_success = true;
       break;
     }
     case paInt8: {
       msg.audio.audio_data.int8_data = this->read_data<int8_t>();
+      read_success = true;
       break;
     }
     case paUInt8: {
       msg.audio.audio_data.uint8_data = this->read_data<uint8_t>();
+      read_success = true;
       break;
     }
     default:
       RCLCPP_ERROR(this->get_logger(), "Unsupported format");
+      continue;
+    }
+
+    if (!read_success) {
       continue;
     }
 
@@ -133,10 +167,23 @@ void AudioCapturerNode::work() {
 
     this->audio_pub_->publish(msg);
   }
+  
+  RCLCPP_INFO(this->get_logger(), "AudioCapturer node shutting down");
 }
 
 template <typename T> std::vector<T> AudioCapturerNode::read_data() {
   std::vector<T> data(this->chunk_ * this->channels_);
-  Pa_ReadStream(this->stream_, data.data(), this->chunk_);
+  
+  PaError err = Pa_ReadStream(this->stream_, data.data(), this->chunk_);
+  if (err != paNoError) {
+    if (err == paInputOverflowed) {
+      RCLCPP_WARN(this->get_logger(), "Input overflowed, continuing");
+    } else {
+      RCLCPP_ERROR(this->get_logger(), "Read error: %s", Pa_GetErrorText(err));
+    }
+    // Return empty vector on error
+    return std::vector<T>();
+  }
+  
   return data;
 }
