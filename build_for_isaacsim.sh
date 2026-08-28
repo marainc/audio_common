@@ -1,7 +1,7 @@
 #!/bin/bash
 # Build audio_common_msgs for Isaac Sim's ROS2 bridge (jazzy, Python 3.11)
 #
-# Isaac Sim 5.1.0 uses Python 3.11, but ros:jazzy ships Python 3.12.
+# Isaac Sim 6.0.1 uses Python 3.11, but ros:jazzy ships Python 3.12.
 # This script installs Python 3.11 in the build container and tells
 # colcon/cmake to generate bindings for 3.11.
 #
