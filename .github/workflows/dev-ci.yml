@@ -1,0 +1,31 @@
+# Focused dev gate; legacy multi-distro workflows remain available separately.
+name: Humble and Jazzy CI
+
+on:
+  pull_request:
+    branches: [dev]
+  push:
+    branches: [dev]
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        ros_distro: [humble, jazzy]
+    container:
+      image: ros:${{ matrix.ros_distro }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ros-tooling/action-ros-ci@v0.4
+        with:
+          target-ros2-distro: ${{ matrix.ros_distro }}
+          coverage-result: false
+          skip-tests: false
+          colcon-defaults: |
+            {"test": {"parallel-workers": 1}}
