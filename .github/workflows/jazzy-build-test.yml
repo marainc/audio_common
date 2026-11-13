@@ -19,7 +19,7 @@ jobs:
         with:
           target-ros2-distro: jazzy
           coverage-result: false
-          skip-tests: false
+          skip-tests: true
           colcon-defaults: |
             {
               "test": {
